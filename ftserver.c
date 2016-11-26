@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <unistd.h>
 
 struct addrinfo * create_address_info(char * port){
 	int status;
@@ -82,7 +83,8 @@ void listen_socket(int sockfd){
 
 char ** create_string_array(int size){
 	char ** array = malloc(size*sizeof(char *));
-	for(int i = 0; i < size; i++){
+	int i = 0;
+	for(; i < size; i++){
 		array[i] = malloc(100*sizeof(char));
 		memset(array[i],0,sizeof(array[i]));
 	}
@@ -90,7 +92,8 @@ char ** create_string_array(int size){
 }
 
 void delete_string_array(char ** array, int size){
-	for (int i = 0; i < size; i++){
+	int i = 0;
+	for (; i < size; i++){
 		free(array[i]);
 	}
 	free(array);
@@ -104,8 +107,10 @@ int get_available_files(char ** files){
 	int i = 0;
 	if (d){
 		while ((dir = readdir(d)) != NULL){
-			strcpy(dir->d_name, files[i]);
-			i++;
+			if (dir->d_type == DT_REG){
+				strcpy(files[i], dir->d_name);
+				i++;
+			}
 		}
 		closedir(d);
 	}
@@ -114,7 +119,8 @@ int get_available_files(char ** files){
 
 int does_file_exist(char ** files, int num_files, char * filename){
 	int file_exists = 0;
-	for (int i = 0; i < num_files; i++){
+	int i = 0;
+	for (; i < num_files; i++){
 		if(strcmp(files[i], filename) == 0){
 			file_exists = 1;
 		}
@@ -125,19 +131,22 @@ int does_file_exist(char ** files, int num_files, char * filename){
 //http://stackoverflow.com/questions/2014033/send-and-receive-a-file-in-socket-programming-in-linux-with-c-c-gcc-g
 void send_file(char * ip_address, char * port, char * filename){
 	// connect the data socket
+	sleep(2);
 	struct addrinfo * res = create_address_info_with_ip(ip_address, port);
 	int data_socket = create_socket(res);
 	connect_socket(data_socket, res);
 	char buffer[1000];
+	FILE * fd = fopen(filename, "w");
 	while (1) {
 		// Read data into buffer.  We may not have enough to fill up buffer, so we
 		// store how many bytes were actually read in bytes_read.
-		int bytes_read = read(filename, buffer, sizeof(buffer));
+		int bytes_read = read(fd, buffer, sizeof(buffer));
 		if (bytes_read == 0) // We're done reading from the file
 			break;
 
 		if (bytes_read < 0) {
 			fprintf(stderr, "Error reading file\n");
+			return;
 		}
 
 		// You need a loop for the write, because not all of the data may be written
@@ -149,6 +158,7 @@ void send_file(char * ip_address, char * port, char * filename){
 			int bytes_written = write(data_socket, p, bytes_read);
 			if (bytes_written <= 0) {
 				fprintf(stderr, "Error writing to socket\n");
+				return;
 			}
 			bytes_read -= bytes_written;
 			p += bytes_written;
@@ -162,19 +172,21 @@ void send_file(char * ip_address, char * port, char * filename){
 
 void send_directory(char * ip_address, char * port, char ** files, int num_files){
 	// connect the data socket
+	sleep(2);
 	struct addrinfo * res = create_address_info_with_ip(ip_address, port);
 	int data_socket = create_socket(res);
 	connect_socket(data_socket, res);
-	for (int i = 0; i < num_files; i++){
-		send(data_socket, files[i], strlen(files[i]),0);
+	int i = 0;
+	for (; i < num_files; i++){
+		send(data_socket, files[i], 100,0);
 	}
 	char * done_message = "done";
 	send(data_socket, done_message, strlen(done_message),0);
+	close(data_socket);
 	freeaddrinfo(res);
 }
 
-void handle_request(int new_fd, char * ip_address){
-	printf("Incoming connection from %s\n", ip_address);
+void handle_request(int new_fd){
 	// get the port number the client is expecting for a data connection
 	char port[100];
 	memset(port, 0, sizeof(port));
@@ -183,16 +195,22 @@ void handle_request(int new_fd, char * ip_address){
 	char command[3];
 	memset(command,0,sizeof(command));
 	recv(new_fd, command, sizeof(command)-1, 0);
+	// receive the ip of the client
+	char ip_address[100];
+	memset(ip_address,0,sizeof(ip_address));
+	recv(new_fd, ip_address, sizeof(ip_address)-1,0);
+	printf("Incoming connection from %s\n", ip_address);
 	char * ok_message = "ok";
 	char * bad_message = "bad";
 	if(strcmp(command,"l") == 0){
 		// list files
 		send(new_fd, ok_message, strlen(ok_message),0);
 		printf("File list requested on port %s\n", port);
+		printf("Sending file list to %s on port %s\n", ip_address, port);
 		char ** files = create_string_array(100);
 		int num_files = get_available_files(files);
 		send_directory(ip_address, port, files, num_files);
-		delete_string_array(files,0);
+		delete_string_array(files,100);
 	}
 	else if(strcmp(command, "g") == 0){
 		// get filename
@@ -208,7 +226,12 @@ void handle_request(int new_fd, char * ip_address){
 			printf("File found, sending %s to client\n", filename);
 			char * file_found = "File found";
 			send(new_fd, file_found, strlen(file_found),0);
-			send_file(ip_address, port, filename);
+			char new_filename[100];
+			memset(new_filename,0,sizeof(new_filename));
+			strcpy(new_filename, "./");
+			char * end = new_filename + strlen(new_filename);
+			end += sprintf(end, "%s", filename);
+			send_file(ip_address, port, new_filename);
 		}
 		else{
 			printf("File not found, sending error message to client\n");
@@ -219,7 +242,9 @@ void handle_request(int new_fd, char * ip_address){
 	}
 	else{
 		send(new_fd, bad_message, strlen(bad_message), 0);
+		printf("Invalid command sent\n");
 	}
+	printf("Continuing to wait for incoming connections\n");
 }
 
 void wait_for_connection(int sockfd){
@@ -233,9 +258,7 @@ void wait_for_connection(int sockfd){
 			// no incoming connection for now, keep waiting
 			continue;
 		}
-		char ip_address[INET_ADDRSTRLEN];
-		inet_ntop(AF_INET, (struct sockaddr_in *)&their_addr, ip_address, INET_ADDRSTRLEN);
-		handle_request(new_fd, ip_address);
+		handle_request(new_fd);
 		close(new_fd);
 	}
 }
