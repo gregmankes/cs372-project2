@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 struct addrinfo * create_address_info(char * port){
 	int status;
@@ -136,11 +137,12 @@ void send_file(char * ip_address, char * port, char * filename){
 	int data_socket = create_socket(res);
 	connect_socket(data_socket, res);
 	char buffer[1000];
-	FILE * fd = fopen(filename, "w");
+	memset(buffer, 0, sizeof(buffer));
+	int fd = open(filename, O_RDONLY);
 	while (1) {
 		// Read data into buffer.  We may not have enough to fill up buffer, so we
 		// store how many bytes were actually read in bytes_read.
-		int bytes_read = read(fd, buffer, sizeof(buffer));
+		int bytes_read = read(fd, buffer, sizeof(buffer)-1);
 		if (bytes_read == 0) // We're done reading from the file
 			break;
 
@@ -155,8 +157,8 @@ void send_file(char * ip_address, char * port, char * filename){
 		// to keep track of how many bytes are left to write.
 		void *p = buffer;
 		while (bytes_read > 0) {
-			int bytes_written = write(data_socket, p, bytes_read);
-			if (bytes_written <= 0) {
+			int bytes_written = send(data_socket, p, sizeof(buffer),0);
+			if (bytes_written < 0) {
 				fprintf(stderr, "Error writing to socket\n");
 				return;
 			}
@@ -165,8 +167,10 @@ void send_file(char * ip_address, char * port, char * filename){
 		}
 		memset(buffer, 0, sizeof(buffer));
 	}
-	char * done_message = "done";
-	send(data_socket, done_message, strlen(done_message),0);
+	memset(buffer, 0, sizeof(buffer));
+	strcpy(buffer, "__done__");
+	send(data_socket, buffer, sizeof(buffer),0);
+	close(data_socket);
 	freeaddrinfo(res);
 }
 
@@ -236,7 +240,7 @@ void handle_request(int new_fd){
 		else{
 			printf("File not found, sending error message to client\n");
 			char * file_not_found = "File not found";
-			send(new_fd, file_not_found, strlen(file_not_found), 0);
+			send(new_fd, file_not_found, 100, 0);
 		}
 		delete_string_array(files, 100);
 	}

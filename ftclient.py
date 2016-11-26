@@ -42,8 +42,9 @@ def get_file_list(data_socket):
 def get_file(data_socket):
     f = open(sys.argv[4],"w")
     buff = data_socket.recv(1000)
-    while buff != "done":
+    while "__done__" not in buff:
         f.write(buff)
+        buff = data_socket.recv(1000)
 
 def get_my_ip():
     s = socket(AF_INET, SOCK_DGRAM)
@@ -69,16 +70,15 @@ def exchange_information(clientsocket):
         exit(1)
     if sys.argv[3] == "-g":
         clientsocket.send(sys.argv[4])
+        response = clientsocket.recv(1024)
+        if response != "File found":
+            print "Client responded with 'File not found message'"
+            return
     data_socket = setup_data_socket()
     #begin to receive data
     if sys.argv[3] == "-l":
         get_file_list(data_socket)
     elif(sys.argv[3] == "-g"):
-        response = clientsocket.recv(1024)
-        if response != "File found":
-            print "Client responded with 'File not found message'"
-            data_socket.close()
-            return
         get_file(data_socket)
     # close the socket at the end
     data_socket.close()
