@@ -5,9 +5,9 @@ def check_args():
     if len(sys.argv) < 5 or len(sys.argv) > 6:
         print "Invalid number of args"
         exit(1)
-    # elif (sys.argv[1] != "flip1" and sys.argv[1] != "flip2" and sys.argv[1] != "flip3"):
-    #     print "Invalid server name"
-    #     exit(1)
+    elif (sys.argv[1] != "flip1" and sys.argv[1] != "flip2" and sys.argv[1] != "flip3"):
+        print "Invalid server name"
+        exit(1)
     elif (int(sys.argv[2]) > 65535 or int(sys.argv[2]) < 1024):
         print "Invalid control port number"
         exit(1)
@@ -60,8 +60,13 @@ def exchange_information(clientsocket):
         portnum = 5
     # send port to send on
     clientsocket.send(sys.argv[portnum])
+    clientsocket.recv(1024)
     # send command
-    clientsocket.send(sys.argv[3][1:])
+    if sys.argv[3] == "-l":
+        clientsocket.send("l")
+    else:
+        clientsocket.send("g")
+    clientsocket.recv(1024)
     # send my ip
     clientsocket.send(get_my_ip())
     response = clientsocket.recv(1024)
@@ -85,8 +90,8 @@ def exchange_information(clientsocket):
 
 
 def connect_to_server():
-    #servername = sys.argv[1]+".engr.oregonstate.edu"
-    servername = sys.argv[1]
+    servername = sys.argv[1]+".engr.oregonstate.edu"
+  #  servername = sys.argv[1]
     serverport = int(sys.argv[2])
     clientsocket = socket(AF_INET,SOCK_STREAM)
     clientsocket.connect((servername, serverport))

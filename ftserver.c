@@ -192,20 +192,22 @@ void send_directory(char * ip_address, char * port, char ** files, int num_files
 
 void handle_request(int new_fd){
 	// get the port number the client is expecting for a data connection
+	char * ok_message = "ok";
+	char * bad_message = "bad";
 	char port[100];
 	memset(port, 0, sizeof(port));
 	recv(new_fd, port, sizeof(port)-1, 0);
+	send(new_fd, ok_message, strlen(ok_message),0);
 	// get the command from the client
-	char command[3];
+	char command[100];
 	memset(command,0,sizeof(command));
 	recv(new_fd, command, sizeof(command)-1, 0);
+	send(new_fd, ok_message, strlen(ok_message),0);
 	// receive the ip of the client
 	char ip_address[100];
 	memset(ip_address,0,sizeof(ip_address));
 	recv(new_fd, ip_address, sizeof(ip_address)-1,0);
 	printf("Incoming connection from %s\n", ip_address);
-	char * ok_message = "ok";
-	char * bad_message = "bad";
 	if(strcmp(command,"l") == 0){
 		// list files
 		send(new_fd, ok_message, strlen(ok_message),0);
